@@ -13,6 +13,14 @@
   const DURATION = 3 * 60 * 60;
   const PACE = DURATION / 100; // 108 วินาทีต่อข้อ
   const LS = { session: "gp-exam-session-v2", history: "gp-exam-history-v2", prefs: "gp-exam-prefs-v2" };
+  const LS_USERS = "gp-exam-users-v1", LS_AUTH = "gp-exam-auth-v1";
+  let user = null; // { id, name } หรือ { id: "guest" }
+  function bindUser(u) {
+    user = u;
+    const sfx = u && u.id !== "guest" ? ":" + u.id : "";
+    LS.session = "gp-exam-session-v2" + sfx;
+    LS.history = "gp-exam-history-v2" + sfx;
+  }
 
   // ---------- คำแนะนำรายหัวข้อ ----------
   const TIPS = {
@@ -45,7 +53,8 @@
     set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* ignore */ } },
     del(k) { try { localStorage.removeItem(k); } catch (e) { /* ignore */ } },
   };
-  const prefs = Object.assign({ level: "bach", mode: "real", year: 2565, theme: "system" }, store.get(LS.prefs, {}));
+  const prefs = Object.assign({ level: "bach", mode: "real", year: 2565, theme: "light" }, store.get(LS.prefs, {}));
+  if (prefs.theme !== "dark") prefs.theme = "light";
   applyTheme();
 
   let view = "home";
@@ -62,10 +71,19 @@
 
   function applyTheme() {
     const r = document.documentElement;
-    if (prefs.theme === "system") r.removeAttribute("data-theme"); else r.setAttribute("data-theme", prefs.theme);
+    r.setAttribute("data-theme", prefs.theme === "dark" ? "dark" : "light");
+    const m = document.querySelector('meta[name="theme-color"]'); if (m) m.setAttribute("content", prefs.theme === "dark" ? "#141017" : "#fdf0ec");
   }
   function savePrefs() { store.set(LS.prefs, prefs); }
 
+  function themeToggle() {
+    return `<div class="seg seg-theme" role="group" aria-label="โหมดสี">${[["light", "☀ สว่าง"], ["dark", "☾ มืด"]].map(([k, t]) => `<button data-act="theme" data-v="${k}" aria-pressed="${prefs.theme === k}">${t}</button>`).join("")}</div>`;
+  }
+  function userChip() {
+    if (!user) return "";
+    const nm = user.id === "guest" ? "ผู้เยี่ยมชม" : user.name;
+    return `<span class="user-chip" title="${esc(nm)}"><span class="avatar">${esc(nm.trim().charAt(0) || "?")}</span><span class="uname">${esc(nm)}</span></span><button class="btn sm" data-act="logout">${user.id === "guest" ? "เข้าสู่ระบบ" : "ออกจากระบบ"}</button>`;
+  }
   function brand(sub) {
     return `<div class="brand"><div class="logo">ก.พ.</div><div style="min-width:0"><b>ห้องสอบ ก.พ. จำลอง</b><small>${sub}</small></div></div>`;
   }
@@ -101,39 +119,43 @@
     const answeredProg = inProg ? inProg.answers.filter((a) => a !== null).length : 0;
     $app.innerHTML = `
     <header class="appbar">${brand("ภาค ก. · ข้อสอบเสมือนจริง")}
-      <div class="bar-actions"><div class="seg seg-theme" role="group" aria-label="ธีม">${[["system", "อัตโนมัติ"], ["light", "สว่าง"], ["dark", "มืด"]].map(([k, t]) => `<button data-act="theme" data-v="${k}" aria-pressed="${prefs.theme === k}">${t}</button>`).join("")}</div></div>
+      <div class="bar-actions">${themeToggle()}${userChip()}</div>
     </header>
     <main class="view"><div class="home">
       <section class="hero">
         <span class="eyebrow-pill"><i></i>การสอบวัดความรู้ความสามารถทั่วไป (ภาค ก.)</span>
         <h1><span class="grad">ฝึกสอบ ก.พ.</span> เสมือนจริง<br>รู้จุดอ่อนทันทีหลังสอบ</h1>
-        <p>เลือกชุดข้อสอบตามแนวปี 2565–2569 ทำในเวลาจริง 3 ชั่วโมง แล้วรับบทวิเคราะห์จุดแข็ง จุดอ่อน และแผนพัฒนา 4 สัปดาห์</p>
-        <div class="cta">${inProg
-          ? `<button class="btn primary lg" data-act="resume"><span class="arr">→</span>ทำต่อข้อ ${inProg.cur + 1} · ชุดปี ${y}</button><button class="btn lg" data-act="start">เริ่มชุดนี้ใหม่</button>`
-          : `<button class="btn primary lg" data-act="start"><span class="arr">→</span>เริ่มสอบชุดที่ ${setNo(y)} · ปี ${y}</button><button class="btn lg" data-act="practice">ลองโหมดฝึก</button>`}</div>
-        <div class="ticks"><span>100 ข้อ · 200 คะแนน · 3 ชั่วโมง</span><span>เฉลยละเอียดทุกข้อ</span><span>${inProg ? `ตอบแล้ว ${answeredProg}/100 ข้อ` : "ไม่ต้องสมัครสมาชิก"}</span></div>
+        <p>${user && user.id !== "guest" ? `สวัสดี คุณ${esc(user.name)} · ` : ""}ทำตาม 3 ขั้นตอนด้านล่าง เลือกชุด ตั้งค่า แล้วเริ่มสอบ ระบบจะวิเคราะห์จุดแข็ง จุดอ่อน และแผนพัฒนา 4 สัปดาห์ให้หลังส่งคำตอบ</p>
+        <ol class="flow" aria-label="ขั้นตอนการใช้งาน">
+          <li class="${y ? "done" : ""}"><span class="sn">1</span><div><b>เลือกชุดข้อสอบ</b><small>5 ชุด แนวปี 2565–2569</small></div></li>
+          <li class="${inProg ? "" : "now"}"><span class="sn">2</span><div><b>ตั้งค่าการสอบ</b><small>วุฒิ และรูปแบบการสอบ</small></div></li>
+          <li><span class="sn">3</span><div><b>เริ่มสอบ แล้วรับบทวิเคราะห์</b><small>100 ข้อ · 3 ชั่วโมง · เฉลยทุกข้อ</small></div></li>
+        </ol>
       </section>
-      <section class="sets" role="group" aria-label="ชุดข้อสอบ">${sets}</section>
-      <section class="steps">
-        <div class="step"><span class="sn">1</span><div><b>เลือกชุดและวุฒิ</b><small>5 ชุดตามแนวปี 2565–2569 เกณฑ์ผ่านปรับตามวุฒิ</small></div></div>
-        <div class="step"><span class="sn">2</span><div><b>สอบจับเวลา 3 ชม.</b><small>ตารางข้อ 1–100 ทำเครื่องหมายทบทวน คุมเวลาให้</small></div></div>
-        <div class="step"><span class="sn">3</span><div><b>รับบทวิเคราะห์</b><small>จุดแข็ง จุดอ่อน ต้องถูกเพิ่มกี่ข้อ และแผน 4 สัปดาห์</small></div></div>
+      <section class="pick">
+        <div class="step-title"><span class="sn">1</span>เลือกชุดข้อสอบ <span class="dim">กดการ์ดเพื่อเลือก</span></div>
+        <div class="sets" role="group" aria-label="ชุดข้อสอบ">${sets}</div>
       </section>
       <aside class="home-side">
         <section class="card launch">
-          <h2>ตั้งค่าการสอบ <span class="pill info">ชุดที่ ${setNo(y)} · ปี ${y}</span></h2>
+          <div class="step-title"><span class="sn">2</span>ตั้งค่าการสอบ</div>
+          <div class="sel-sum"><span class="dim">ชุดที่เลือก</span><b>ชุดที่ ${setNo(y)} · แนวข้อสอบปี ${y}</b></div>
           <div class="row"><span class="cap">ระดับวุฒิที่สมัคร</span>
-            <div class="seg" role="group">${Object.entries(LEVELS).map(([k, v]) => `<button data-act="level" data-v="${k}" aria-pressed="${prefs.level === k}">${v.name}</button>`).join("")}</div></div>
+            <div class="seg seg-choice" role="group">${Object.entries(LEVELS).map(([k, v]) => `<button data-act="level" data-v="${k}" aria-pressed="${prefs.level === k}">${v.name}</button>`).join("")}</div></div>
           <div class="row"><span class="cap">รูปแบบ</span>
-            <div class="seg" role="group"><button data-act="mode" data-v="real" aria-pressed="${prefs.mode === "real"}">สอบเสมือนจริง</button><button data-act="mode" data-v="practice" aria-pressed="${prefs.mode === "practice"}">โหมดฝึก</button></div>
+            <div class="seg seg-choice" role="group"><button data-act="mode" data-v="real" aria-pressed="${prefs.mode === "real"}">สอบเสมือนจริง</button><button data-act="mode" data-v="practice" aria-pressed="${prefs.mode === "practice"}">โหมดฝึก</button></div>
             <span class="hint">${prefs.mode === "real" ? "จับเวลา 3 ชั่วโมง ส่งอัตโนมัติเมื่อหมดเวลา เฉลยหลังส่ง" : "ไม่จำกัดเวลา เฉลยและคำอธิบายทันทีทีละข้อ"} · เกณฑ์คิดวิเคราะห์ ${LEVELS[prefs.level].analytic}%</span></div>
+          <div class="step-title" style="margin-top:4px"><span class="sn">3</span>เริ่มสอบ</div>
+          <div class="go">${inProg
+            ? `<button class="btn primary lg" data-act="resume"><span class="arr">→</span>ทำต่อจากข้อ ${inProg.cur + 1} (ตอบแล้ว ${answeredProg} ข้อ)</button><button class="btn" data-act="start">เริ่มชุดนี้ใหม่</button>`
+            : `<button class="btn primary lg" data-act="start"><span class="arr">→</span>เริ่มสอบชุดที่ ${setNo(y)} · ปี ${y}</button>`}</div>
         </section>
         <section class="card hist-card">
           <h2>ผลสอบที่ผ่านมา ${hist.length ? `<span class="dim" style="font-size:12px;font-weight:500">${hist.length} ครั้ง · ผ่าน ${hist.filter((h) => h.pass).length}</span>` : ""}</h2>
           <div class="scroll">${trend}${histList}</div>
         </section>
       </aside>
-      <section class="band">
+      <section class="band" aria-label="โครงสร้างข้อสอบ">
         <div class="band-item"><b>50</b><span>ข้อ คิดวิเคราะห์<br><small>ผ่าน ${LEVELS[prefs.level].analytic}%</small></span></div>
         <div class="band-item"><b>25</b><span>ข้อ ภาษาอังกฤษ<br><small>ผ่าน 50%</small></span></div>
         <div class="band-item"><b>25</b><span>ข้อ ข้าราชการที่ดี<br><small>ผ่าน 60%</small></span></div>
@@ -141,6 +163,80 @@
         <p class="band-note">ก.พ. ไม่เผยแพร่ข้อสอบจริงย้อนหลัง ทุกชุดเขียนขึ้นใหม่ตามโครงสร้างและขอบเขตเนื้อหาจริง</p>
       </section>
     </div></main>`;
+  }
+
+  // ======================= เข้าสู่ระบบ =======================
+  let authTab = "login", authErr = "", authDraft = {};
+  async function hashPw(username, pw) {
+    const data = new TextEncoder().encode("gp-exam:" + username.toLowerCase() + ":" + pw);
+    try { const buf = await crypto.subtle.digest("SHA-256", data); return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join(""); }
+    catch (e) { let h = 5381; for (const b of data) h = ((h << 5) + h + b) | 0; return "d" + (h >>> 0).toString(16); }
+  }
+  function renderLogin() {
+    view = "login"; stopTick();
+    document.title = "เข้าสู่ระบบ · ห้องสอบ ก.พ. จำลอง";
+    const reg = authTab === "register";
+    $app.innerHTML = `
+    <header class="appbar">${brand("ภาค ก. · ข้อสอบเสมือนจริง")}<div class="bar-actions">${themeToggle()}</div></header>
+    <main class="view"><div class="login">
+      <section class="login-hero">
+        <span class="eyebrow-pill"><i></i>ห้องสอบ ก.พ. จำลอง</span>
+        <h1><span class="grad">ฝึกสอบ ก.พ.</span><br>เก็บผลไว้ในบัญชีของคุณ</h1>
+        <p>เข้าสู่ระบบเพื่อแยกประวัติคะแนน ข้อสอบที่ทำค้าง และบทวิเคราะห์ของแต่ละคน ใช้เครื่องเดียวกันหลายคนได้โดยข้อมูลไม่ปนกัน</p>
+        <ul class="login-points"><li>5 ชุดข้อสอบเสมือนจริง แนวปี 2565–2569</li><li>จับเวลา 3 ชั่วโมงเหมือนสนามสอบจริง</li><li>วิเคราะห์จุดอ่อนพร้อมแผนพัฒนา 4 สัปดาห์</li></ul>
+      </section>
+      <section class="card login-card">
+        <div class="seg seg-choice login-tabs" role="tablist">
+          <button role="tab" data-act="authtab" data-v="login" aria-pressed="${!reg}">เข้าสู่ระบบ</button>
+          <button role="tab" data-act="authtab" data-v="register" aria-pressed="${reg}">สมัครใช้งาน</button>
+        </div>
+        <form id="authForm" class="auth-form" novalidate>
+          <h2>${reg ? "สร้างบัญชีใหม่" : "ยินดีต้อนรับกลับมา"}</h2>
+          ${reg ? `<label class="field"><span>ชื่อที่แสดง</span><input id="f-name" name="name" autocomplete="nickname" placeholder="เช่น สมชาย" value="${esc(authDraft.name || "")}" required></label>` : ""}
+          <label class="field"><span>ชื่อผู้ใช้</span><input id="f-user" name="username" autocomplete="username" placeholder="ภาษาอังกฤษหรือตัวเลข 3–20 ตัว" value="${esc(authDraft.username || "")}" required></label>
+          <label class="field"><span>รหัสผ่าน</span><span class="pw"><input id="f-pass" name="password" type="password" autocomplete="${reg ? "new-password" : "current-password"}" placeholder="อย่างน้อย 6 ตัวอักษร" required><button type="button" class="pw-toggle" data-act="pwshow" aria-label="แสดงรหัสผ่าน">แสดง</button></span></label>
+          ${reg ? `<label class="field"><span>ยืนยันรหัสผ่าน</span><input id="f-pass2" name="password2" type="password" autocomplete="new-password" required></label>` : ""}
+          <div class="form-err" role="alert">${esc(authErr)}</div>
+          <button type="submit" class="btn primary lg">${reg ? "สมัครและเข้าสู่ระบบ" : "เข้าสู่ระบบ"}</button>
+          <div class="or"><span>หรือ</span></div>
+          <button type="button" class="btn lg" data-act="guest">เข้าใช้งานแบบผู้เยี่ยมชม</button>
+          <p class="fine">บัญชีและผลสอบเก็บไว้ในเบราว์เซอร์ของเครื่องนี้เท่านั้น ไม่ได้ส่งขึ้นเซิร์ฟเวอร์ หากล้างข้อมูลเบราว์เซอร์ ข้อมูลจะหายไป</p>
+        </form>
+      </section>
+    </div></main>`;
+    const f = document.getElementById("authForm");
+    f.addEventListener("submit", onAuthSubmit);
+    const first = f.querySelector("input"); if (first && !first.value) first.focus();
+  }
+  async function onAuthSubmit(e) {
+    e.preventDefault();
+    const reg = authTab === "register";
+    const g = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ""; };
+    const username = g("f-user").toLowerCase(), pw = document.getElementById("f-pass").value, name = g("f-name");
+    authDraft = { username, name };
+    const users = store.get(LS_USERS, {});
+    const fail = (m) => { authErr = m; renderLogin(); };
+    if (!/^[a-z0-9_.-]{3,20}$/.test(username)) return fail("ชื่อผู้ใช้ต้องเป็นภาษาอังกฤษ ตัวเลข หรือ _ . - ยาว 3–20 ตัว");
+    if (pw.length < 6) return fail("รหัสผ่านต้องมีอย่างน้อย 6 ตัวอักษร");
+    if (reg) {
+      if (!name) return fail("กรุณาใส่ชื่อที่แสดง");
+      if (pw !== document.getElementById("f-pass2").value) return fail("รหัสผ่านทั้งสองช่องไม่ตรงกัน");
+      if (users[username]) return fail("ชื่อผู้ใช้นี้มีในเครื่องนี้แล้ว ลองเข้าสู่ระบบ หรือใช้ชื่ออื่น");
+      users[username] = { name, hash: await hashPw(username, pw), created: Date.now() };
+      store.set(LS_USERS, users);
+    } else {
+      const u = users[username];
+      if (!u || u.hash !== (await hashPw(username, pw))) return fail("ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง");
+    }
+    authErr = ""; authDraft = {};
+    store.set(LS_AUTH, username);
+    bindUser({ id: username, name: users[username].name });
+    renderHome();
+  }
+  function logout() {
+    if (view === "exam" && S && !S.done) save();
+    store.del(LS_AUTH); S = null; bindUser(null);
+    authTab = "login"; authErr = ""; renderLogin();
   }
 
   // ======================= การสอบ =======================
@@ -548,7 +644,11 @@
     if (!el) return;
     const v = el.dataset.v, act = el.dataset.act;
     switch (act) {
-      case "theme": prefs.theme = v; savePrefs(); applyTheme(); renderHome(); break;
+      case "theme": prefs.theme = v; savePrefs(); applyTheme(); (view === "login" ? renderLogin : renderHome)(); break;
+      case "authtab": authTab = v; authErr = ""; renderLogin(); break;
+      case "pwshow": { const i = document.getElementById("f-pass"); const show = i.type === "password"; i.type = show ? "text" : "password"; el.textContent = show ? "ซ่อน" : "แสดง"; const i2 = document.getElementById("f-pass2"); if (i2) i2.type = i.type; break; }
+      case "guest": store.set(LS_AUTH, "guest"); bindUser({ id: "guest" }); renderHome(); break;
+      case "logout": logout(); break;
       case "pick": prefs.year = +el.dataset.y; savePrefs(); renderHome(); break;
       case "level": prefs.level = v; savePrefs(); renderHome(); break;
       case "mode": prefs.mode = v; savePrefs(); renderHome(); break;
@@ -590,5 +690,11 @@
   });
   window.addEventListener("beforeunload", () => { if (view === "exam" && S && !S.done) save(); });
 
-  renderHome();
+  (function boot() {
+    const a = store.get(LS_AUTH, null);
+    const users = store.get(LS_USERS, {});
+    if (a === "guest") { bindUser({ id: "guest" }); renderHome(); }
+    else if (a && users[a]) { bindUser({ id: a, name: users[a].name }); renderHome(); }
+    else renderLogin();
+  })();
 })();
